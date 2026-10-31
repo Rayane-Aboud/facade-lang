@@ -1,0 +1,4 @@
+-- expect: E0002
+-- A parameter must have a type. Correct: `param offset : Length = 0.0 m`.
+
+param offset = 0.0 m

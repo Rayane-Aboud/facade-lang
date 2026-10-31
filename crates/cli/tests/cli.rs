@@ -43,3 +43,15 @@ fn no_arguments_prints_usage() {
         "stderr was: {stderr}"
     );
 }
+
+#[test]
+fn check_rejects_program_with_syntax_error() {
+    let out = facadec(&["check", "examples/err/param_missing_type.fcd"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(out.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("error[E0002]: expected `:`, found `=`"),
+        "stderr was: {stderr}"
+    );
+}

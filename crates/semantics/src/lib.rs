@@ -1,7 +1,8 @@
 use diagnostics::Diagnostic;
 
-pub fn check(_source: &str) -> Vec<Diagnostic> {
-    Vec::new()
+pub fn check(source: &str) -> Vec<Diagnostic> {
+    let (_program, diagnostics) = syntax::parser::parse(source);
+    diagnostics
 }
 
 #[cfg(test)]
@@ -14,8 +15,8 @@ mod tests {
     }
 
     #[test]
-    fn fig5_panel_example_is_accepted() {
-        let source = include_str!("../../../examples/ok/fig5_panel.fcd");
-        assert_eq!(check(source), vec![]);
+    fn syntax_errors_are_reported() {
+        let codes: Vec<&str> = check("param x = 3").iter().map(|d| d.code).collect();
+        assert_eq!(codes, vec!["E0002"]);
     }
 }

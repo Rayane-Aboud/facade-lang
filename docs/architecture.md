@@ -76,16 +76,16 @@ apart from "the tool was called wrongly".
 |-------------------|------------------------------|--------------------------------------|
 | unit tests        | `mod tests` in `src/*.rs`    | one module from the inside           |
 | integration tests | `crates/cli/tests/cli.rs`    | the real `facadec` binary, end to end |
-| example corpus    | `examples/ok`, `examples/err`| planned in M1, see below             |
+| example corpus    | `crates/semantics/tests/examples.rs` | every file in `examples/ok` and `examples/err` |
 
 The CLI tests only check the adapter's own job (arguments, file reading,
 exit codes, output). All checking logic is tested in the library crates.
 
-**Planned in M1:** one data-driven test in `semantics` runs `check` on every
+**Example corpus.** A data-driven test in `semantics` runs `check` on every
 file in `examples/`. Files in `ok/` must give no diagnostics; each file in
-`err/` has exactly one bug and states its expected error code in a comment
-on its first line, e.g. `-- expect: E0102`. Adding a test case is then adding
-a file.
+`err/` has exactly one bug and states its expected error code on its first
+line, e.g. `-- expect: E0102`. Adding a test case is adding a file.
+
 
 CI (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo clippy` with
 warnings as errors, and `cargo test` on every push and pull request.
