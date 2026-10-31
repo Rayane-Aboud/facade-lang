@@ -10,7 +10,7 @@
 
 use diagnostics::{Diagnostic, Span};
 
-use crate::ast::{Name, Product, ProductKind};
+use crate::ast::{Name, Product, ProductKind, Quantity, Type, TypeKind};
 use crate::token::{Token, TokenKind};
 
 struct Parser<'a> {
@@ -32,6 +32,62 @@ impl<'a> Parser<'a> {
     }
 
     // Rules
+
+    /// `type = "Tol" , "<" , type , "," , quantity , ">" | dim_type ;`
+    fn ty(&mut self) -> Option<Type> {
+        let start = self.start();
+        let kind = match self.peek() {
+            TokenKind::Tol => {
+                self.advance();
+                self.expect(TokenKind::Lt)?;
+                let inner = self.ty()?;
+                self.expect(TokenKind::Comma)?;
+                let tolerance = self.quantity()?;
+                self.expect(TokenKind::Gt)?;
+                TypeKind::Tol {
+                    inner: Box::new(inner),
+                    tolerance,
+                }
+            }
+            TokenKind::Ident | TokenKind::LParen => TypeKind::Product(self.product()?),
+            _ => {
+                self.error_expected("a type");
+                return None;
+            }
+        };
+        Some(Type {
+            kind,
+            span: self.span_from(start),
+        })
+    }
+
+    /// `quantity = NUMBER , [ unit ] ;`
+    /// `unit = IDENT , [ "^" , int ] | "[" , unit_expr , "]" ;`
+    ///
+    /// A simple unit is one factor only (decision D1), so in `2.5 m * t` the
+    /// quantity stops after `m`. Only a bracketed unit may contain `*` and `/`.
+    fn quantity(&mut self) -> Option<Quantity> {
+        let start = self.start();
+        let number = self.expect(TokenKind::Number)?;
+        let value = self.number_value(&number)?;
+        let unit = match self.peek() {
+            TokenKind::Ident => Some(self.product_factor()?),
+            TokenKind::LBracket => {
+                let bracket_start = self.start();
+                self.advance();
+                let mut unit = self.product()?;
+                self.expect(TokenKind::RBracket)?;
+                unit.span = self.span_from(bracket_start); // the span covers the brackets
+                Some(unit)
+            }
+            _ => None,
+        };
+        Some(Quantity {
+            value,
+            unit,
+            span: self.span_from(start),
+        })
+    }
 
     /// `product = factor , { ( "*" | "/" ) , factor } ;`
     ///
@@ -101,6 +157,23 @@ impl<'a> Parser<'a> {
                 });
                 None
             }
+        }
+    }
+
+    /// The value of a `Number` token. The lexer only produces valid number
+    /// text, so parsing cannot fail; but the value may not fit in an `f64`.
+    fn number_value(&mut self, token: &Token) -> Option<f64> {
+        let text = self.text(&token.span);
+        let value: f64 = text.parse().expect("the lexer only produces valid numbers");
+        if value.is_finite() {
+            Some(value)
+        } else {
+            self.diagnostics.push(Diagnostic {
+                code: "E0004",
+                message: format!("number `{text}` is too large"),
+                span: token.span.clone(),
+            });
+            None
         }
     }
 
@@ -222,9 +295,37 @@ mod tests {
         }
     }
 
+    /// `0.9 m` is `(0.9 m)`; a number without a unit is just the number.
+    fn show_quantity(q: &Quantity) -> String {
+        match &q.unit {
+            Some(unit) => format!("({} {})", q.value, show(unit)),
+            None => format!("{}", q.value),
+        }
+    }
+
+    /// `Tol<Length, 2.5 mm>` is `(Tol Length (2.5 mm))`.
+    fn show_type(t: &Type) -> String {
+        match &t.kind {
+            TypeKind::Product(p) => show(p),
+            TypeKind::Tol { inner, tolerance } => {
+                format!("(Tol {} {})", show_type(inner), show_quantity(tolerance))
+            }
+        }
+    }
+
     fn product_ok(source: &str) -> String {
         show(&parse_ok(source, |p| p.product()))
     }
+
+    fn quantity_ok(source: &str) -> String {
+        show_quantity(&parse_ok(source, |p| p.quantity()))
+    }
+
+    fn type_ok(source: &str) -> String {
+        show_type(&parse_ok(source, |p| p.ty()))
+    }
+
+    // Products
 
     #[test]
     fn product_single_name() {
@@ -294,5 +395,93 @@ mod tests {
             "a power must be a whole number, found `2.5`"
         );
         assert_eq!(errors[0].span, 2..5);
+    }
+
+    // Quantities
+
+    #[test]
+    fn quantity_without_unit() {
+        assert_eq!(quantity_ok("42"), "42");
+    }
+
+    #[test]
+    fn quantity_with_simple_unit() {
+        assert_eq!(quantity_ok("0.9 m"), "(0.9 m)");
+        assert_eq!(quantity_ok("3 m^2"), "(3 m^2)");
+        assert_eq!(quantity_ok("2.5mm"), "(2.5 mm)");
+    }
+
+    #[test]
+    fn quantity_with_compound_unit_in_brackets() {
+        assert_eq!(quantity_ok("9.81 [m/s^2]"), "(9.81 (/ m s^2))");
+        assert_eq!(quantity_ok("0.3 [W/(m^2*K)]"), "(0.3 (/ W (* m^2 K)))");
+    }
+
+    #[test]
+    fn quantity_simple_unit_stops_before_operator() {
+        // Decision D1: `2.5 m * t` is `(2.5 m) * t`, not the unit `m*t`.
+        let source = "2.5 m * t";
+        let (tokens, _) = lex(source);
+        let mut parser = Parser::new(source, tokens);
+        let quantity = parser.quantity().expect("quantity parses");
+        assert_eq!(show_quantity(&quantity), "(2.5 m)");
+        assert_eq!(parser.peek(), TokenKind::Star);
+    }
+
+    #[test]
+    fn quantity_values_with_exponents() {
+        assert_eq!(parse_ok("1e-3 m", |p| p.quantity()).value, 0.001);
+        assert_eq!(parse_ok("1e6 Pa", |p| p.quantity()).value, 1_000_000.0);
+    }
+
+    #[test]
+    fn quantity_span_covers_number_and_unit() {
+        let quantity = parse_ok("9.81 [m/s^2]", |p| p.quantity());
+        assert_eq!(quantity.span, 0..12);
+        assert_eq!(quantity.unit.expect("has a unit").span, 5..12);
+    }
+
+    #[test]
+    fn quantity_unclosed_unit_bracket_is_e0002() {
+        let errors = parse_errors("9.81 [m/s^2", |p| p.quantity());
+        assert_eq!(errors[0].code, "E0002");
+        assert_eq!(errors[0].message, "expected `]`, found end of file");
+    }
+
+    #[test]
+    fn quantity_too_large_is_e0004() {
+        let errors = parse_errors("1e999 m", |p| p.quantity());
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].code, "E0004");
+        assert_eq!(errors[0].message, "number `1e999` is too large");
+        assert_eq!(errors[0].span, 0..5);
+    }
+
+    // Types
+
+    #[test]
+    fn type_dimension_or_kind() {
+        assert_eq!(type_ok("Thickness"), "Thickness");
+        assert_eq!(type_ok("Length^3"), "Length^3");
+    }
+
+    #[test]
+    fn type_with_tolerance() {
+        assert_eq!(type_ok("Tol<Length, 2.5 mm>"), "(Tol Length (2.5 mm))");
+        assert_eq!(parse_ok("Tol<Length, 2.5 mm>", |p| p.ty()).span, 0..19);
+    }
+
+    #[test]
+    fn type_tol_without_tolerance_is_e0002() {
+        let errors = parse_errors("Tol<Length>", |p| p.ty());
+        assert_eq!(errors[0].code, "E0002");
+        assert_eq!(errors[0].message, "expected `,`, found `>`");
+    }
+
+    #[test]
+    fn type_starting_with_number_is_e0002() {
+        let errors = parse_errors("3 m", |p| p.ty());
+        assert_eq!(errors[0].message, "expected a type, found a number");
+        assert_eq!(errors[0].span, 0..1);
     }
 }
