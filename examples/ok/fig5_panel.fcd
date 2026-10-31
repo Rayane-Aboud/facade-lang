@@ -1,11 +1,9 @@
 -- The facade panel of paper Fig. 5, with named and typed inputs.
--- Target syntax only: the grammar is fixed in Milestone 1.
-
 
 kind Thickness : Length
 kind Inset     : Length
 
-
+param base      : Curve
 param inset     : Inset     = -1.0 m
 param offset    : Length    =  0.0 m
 param thickness : Thickness =  0.9 m  where thickness > 0 m
