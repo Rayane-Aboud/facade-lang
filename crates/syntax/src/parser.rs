@@ -1276,10 +1276,7 @@ mod tests {
         );
         // `b` and `d` survive; `d` comes right after the error in `c`.
         let names: Vec<String> = program.decls.iter().map(show_decl).collect();
-        assert_eq!(
-            names,
-            vec!["(let b _ 2)", "(param d Length _ _)"]
-        );
+        assert_eq!(names, vec!["(let b _ 2)", "(param d Length _ _)"]);
     }
 
     #[test]
