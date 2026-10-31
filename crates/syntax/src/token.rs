@@ -73,6 +73,54 @@ pub enum TokenKind {
     Eof,
 }
 
+impl TokenKind {
+    /// How this kind of token is named in error messages:
+    /// "`:`", "a name", "end of file".
+    pub fn describe(self) -> &'static str {
+        use TokenKind::*;
+        match self {
+            Dimension => "`dimension`",
+            Unit => "`unit`",
+            Kind => "`kind`",
+            Extern => "`extern`",
+            Param => "`param`",
+            Let => "`let`",
+            Where => "`where`",
+            And => "`and`",
+            Tol => "`Tol`",
+            Component => "`component`",
+            Plan => "`plan`",
+            Install => "`install`",
+            On => "`on`",
+            LParen => "`(`",
+            RParen => "`)`",
+            LBracket => "`[`",
+            RBracket => "`]`",
+            LBrace => "`{`",
+            RBrace => "`}`",
+            Lt => "`<`",
+            Gt => "`>`",
+            Comma => "`,`",
+            Colon => "`:`",
+            Semi => "`;`",
+            Eq => "`=`",
+            Plus => "`+`",
+            Minus => "`-`",
+            Star => "`*`",
+            Slash => "`/`",
+            Caret => "`^`",
+            Arrow => "`->`",
+            Le => "`<=`",
+            Ge => "`>=`",
+            EqEq => "`==`",
+            PlusMinus => "`+/-`",
+            Ident => "a name",
+            Number => "a number",
+            Eof => "end of file",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
     pub kind: TokenKind,
@@ -130,5 +178,13 @@ mod tests {
         for word in ["kinds", "Kind", "units", "tol", "thickness", ""] {
             assert_eq!(keyword(word), None, "word: {word}");
         }
+    }
+
+    #[test]
+    fn describe_names_tokens_for_error_messages() {
+        assert_eq!(TokenKind::Colon.describe(), "`:`");
+        assert_eq!(TokenKind::Param.describe(), "`param`");
+        assert_eq!(TokenKind::Ident.describe(), "a name");
+        assert_eq!(TokenKind::Eof.describe(), "end of file");
     }
 }
