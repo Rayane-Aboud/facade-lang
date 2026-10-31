@@ -71,7 +71,6 @@ pub enum TokenKind {
 
     /// End of input. The lexer always emits exactly one, as the last token.
     Eof,
-
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,7 +78,6 @@ pub struct Token {
     pub kind: TokenKind,
     pub span: Span,
 }
-
 
 pub fn keyword(word: &str) -> Option<TokenKind> {
     use TokenKind::*;
@@ -100,7 +98,6 @@ pub fn keyword(word: &str) -> Option<TokenKind> {
         _ => None,
     }
 }
-
 
 #[cfg(test)]
 mod tests {
