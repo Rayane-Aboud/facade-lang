@@ -10,7 +10,7 @@
 
 use diagnostics::{Diagnostic, Span};
 
-use crate::ast::{Name, Product, ProductKind, Quantity, Type, TypeKind};
+use crate::ast::{BinOp, Expr, ExprKind, Name, Product, ProductKind, Quantity, Type, TypeKind};
 use crate::token::{Token, TokenKind};
 
 struct Parser<'a> {
@@ -31,7 +31,152 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // Rules
+    // Rules: expressions, from the loosest operator to the tightest.
+
+    /// `expr = additive , [ PLUSMINUS , additive ] ;`
+    ///
+    /// At most one tolerance: `x +/- 1 mm +/- 2 mm` is E0005.
+    fn expr(&mut self) -> Option<Expr> {
+        let start = self.start();
+        let value = self.additive()?;
+        if !self.eat(TokenKind::PlusMinus) {
+            return Some(value);
+        }
+        let tolerance = self.additive()?;
+        if self.peek() == TokenKind::PlusMinus {
+            self.diagnostics.push(Diagnostic {
+                code: "E0005",
+                message: "a value can have only one tolerance; use brackets to combine \
+                          toleranced values"
+                    .to_string(),
+                span: self.tokens[self.pos].span.clone(),
+            });
+            return None;
+        }
+        Some(Expr {
+            kind: ExprKind::Tolerance {
+                value: Box::new(value),
+                tolerance: Box::new(tolerance),
+            },
+            span: self.span_from(start),
+        })
+    }
+
+    /// `additive = term , { ( "+" | "-" ) , term } ;` (left-associative)
+    fn additive(&mut self) -> Option<Expr> {
+        let start = self.start();
+        let mut left = self.term()?;
+        loop {
+            let op = match self.peek() {
+                TokenKind::Plus => BinOp::Add,
+                TokenKind::Minus => BinOp::Sub,
+                _ => break,
+            };
+            self.advance();
+            let right = self.term()?;
+            left = self.binary(op, left, right, start);
+        }
+        Some(left)
+    }
+
+    /// `term = unary , { ( "*" | "/" ) , unary } ;` (left-associative)
+    fn term(&mut self) -> Option<Expr> {
+        let start = self.start();
+        let mut left = self.unary()?;
+        loop {
+            let op = match self.peek() {
+                TokenKind::Star => BinOp::Mul,
+                TokenKind::Slash => BinOp::Div,
+                _ => break,
+            };
+            self.advance();
+            let right = self.unary()?;
+            left = self.binary(op, left, right, start);
+        }
+        Some(left)
+    }
+
+    /// `unary = "-" , unary | power ;`
+    fn unary(&mut self) -> Option<Expr> {
+        let start = self.start();
+        if !self.eat(TokenKind::Minus) {
+            return self.power();
+        }
+        let operand = self.unary()?;
+        Some(Expr {
+            kind: ExprKind::Neg(Box::new(operand)),
+            span: self.span_from(start),
+        })
+    }
+
+    /// `power = primary , [ "^" , int ] ;`
+    fn power(&mut self) -> Option<Expr> {
+        let start = self.start();
+        let base = self.primary()?;
+        if !self.eat(TokenKind::Caret) {
+            return Some(base);
+        }
+        let power = self.int()?;
+        Some(Expr {
+            kind: ExprKind::Power {
+                base: Box::new(base),
+                power,
+            },
+            span: self.span_from(start),
+        })
+    }
+
+    /// `primary = quantity | IDENT , [ "(" , args ] | "(" , expr , ")" ;`
+    fn primary(&mut self) -> Option<Expr> {
+        let start = self.start();
+        let kind = match self.peek() {
+            TokenKind::Number => ExprKind::Quantity(self.quantity()?),
+            TokenKind::Ident => {
+                let name = self.name()?;
+                if self.eat(TokenKind::LParen) {
+                    let args = self.args()?;
+                    ExprKind::Call { func: name, args }
+                } else {
+                    ExprKind::Name(name)
+                }
+            }
+            TokenKind::LParen => {
+                self.advance();
+                let mut inner = self.expr()?;
+                self.expect(TokenKind::RParen)?;
+                inner.span = self.span_from(start); // the span covers the brackets
+                return Some(inner);
+            }
+            _ => {
+                self.error_expected("an expression");
+                return None;
+            }
+        };
+        Some(Expr {
+            kind,
+            span: self.span_from(start),
+        })
+    }
+
+    /// The arguments of a call, after its `(`: `[ expr , { "," , expr } ] , ")"`.
+    fn args(&mut self) -> Option<Vec<Expr>> {
+        let mut args = Vec::new();
+        if self.eat(TokenKind::RParen) {
+            return Some(args);
+        }
+        loop {
+            args.push(self.expr()?);
+            if self.eat(TokenKind::RParen) {
+                return Some(args);
+            }
+            if !self.eat(TokenKind::Comma) {
+                self.error_expected("`,` or `)`");
+                return None;
+            }
+        }
+    }
+
+    // Rules: types and quantities.
 
     /// `type = "Tol" , "<" , type , "," , quantity , ">" | dim_type ;`
     fn ty(&mut self) -> Option<Type> {
@@ -188,6 +333,18 @@ impl<'a> Parser<'a> {
 
     // Helpers
 
+    /// Build `lhs op rhs`, spanning from `start` to the last consumed token.
+    fn binary(&self, op: BinOp, lhs: Expr, rhs: Expr, start: usize) -> Expr {
+        Expr {
+            kind: ExprKind::Binary {
+                op,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            },
+            span: self.span_from(start),
+        }
+    }
+
     /// The kind of the current token, without consuming it.
     fn peek(&self) -> TokenKind {
         self.tokens[self.pos].kind
@@ -313,6 +470,33 @@ mod tests {
         }
     }
 
+    /// `a + b * c` is `(+ a (* b c))`; `f(x, y)` is `(call f x y)`.
+    fn show_expr(e: &Expr) -> String {
+        match &e.kind {
+            ExprKind::Quantity(q) => show_quantity(q),
+            ExprKind::Name(name) => name.text.clone(),
+            ExprKind::Call { func, args } => {
+                let mut parts = vec![func.text.clone()];
+                parts.extend(args.iter().map(show_expr));
+                format!("(call {})", parts.join(" "))
+            }
+            ExprKind::Neg(x) => format!("(neg {})", show_expr(x)),
+            ExprKind::Binary { op, lhs, rhs } => {
+                let op = match op {
+                    BinOp::Add => "+",
+                    BinOp::Sub => "-",
+                    BinOp::Mul => "*",
+                    BinOp::Div => "/",
+                };
+                format!("({op} {} {})", show_expr(lhs), show_expr(rhs))
+            }
+            ExprKind::Power { base, power } => format!("(^ {} {power})", show_expr(base)),
+            ExprKind::Tolerance { value, tolerance } => {
+                format!("(± {} {})", show_expr(value), show_expr(tolerance))
+            }
+        }
+    }
+
     fn product_ok(source: &str) -> String {
         show(&parse_ok(source, |p| p.product()))
     }
@@ -323,6 +507,10 @@ mod tests {
 
     fn type_ok(source: &str) -> String {
         show_type(&parse_ok(source, |p| p.ty()))
+    }
+
+    fn expr_ok(source: &str) -> String {
+        show_expr(&parse_ok(source, |p| p.expr()))
     }
 
     // Products
@@ -483,5 +671,120 @@ mod tests {
         let errors = parse_errors("3 m", |p| p.ty());
         assert_eq!(errors[0].message, "expected a type, found a number");
         assert_eq!(errors[0].span, 0..1);
+    }
+
+    // Expressions
+
+    #[test]
+    fn expr_names_and_quantities() {
+        assert_eq!(expr_ok("thickness"), "thickness");
+        assert_eq!(expr_ok("0.9 m"), "(0.9 m)");
+    }
+
+    #[test]
+    fn expr_mul_binds_tighter_than_add() {
+        assert_eq!(expr_ok("a + b * c"), "(+ a (* b c))");
+        assert_eq!(expr_ok("a * b + c"), "(+ (* a b) c)");
+    }
+
+    #[test]
+    fn expr_add_and_sub_are_left_associative() {
+        assert_eq!(expr_ok("a - b - c"), "(- (- a b) c)");
+        assert_eq!(expr_ok("a / b * c"), "(* (/ a b) c)");
+    }
+
+    #[test]
+    fn expr_brackets_override_precedence() {
+        assert_eq!(expr_ok("(a + b) * c"), "(* (+ a b) c)");
+    }
+
+    #[test]
+    fn expr_power_binds_tighter_than_minus() {
+        assert_eq!(expr_ok("-x^2"), "(neg (^ x 2))");
+        assert_eq!(expr_ok("- -x"), "(neg (neg x))");
+    }
+
+    #[test]
+    fn expr_unit_binds_tighter_than_power() {
+        // `2 m^2` is two square metres; `(2 m)^2` squares the quantity.
+        assert_eq!(expr_ok("2 m^2"), "(2 m^2)");
+        assert_eq!(expr_ok("(2 m)^2"), "(^ (2 m) 2)");
+    }
+
+    #[test]
+    fn expr_unit_then_multiplication() {
+        // Decision D1, now inside a full expression.
+        assert_eq!(expr_ok("2.5 m * t"), "(* (2.5 m) t)");
+    }
+
+    #[test]
+    fn expr_calls() {
+        assert_eq!(expr_ok("f()"), "(call f)");
+        assert_eq!(expr_ok("patch(curve)"), "(call patch curve)");
+        assert_eq!(
+            expr_ok("thicken(mid, thickness)"),
+            "(call thicken mid thickness)"
+        );
+        assert_eq!(
+            expr_ok("area(mid) * thickness"),
+            "(* (call area mid) thickness)"
+        );
+    }
+
+    #[test]
+    fn expr_tolerance_binds_loosest() {
+        assert_eq!(expr_ok("10 mm +/- 2.5 mm"), "(± (10 mm) (2.5 mm))");
+        assert_eq!(expr_ok("a + b ± 1 mm"), "(± (+ a b) (1 mm))");
+    }
+
+    #[test]
+    fn expr_toleranced_values_combine_in_brackets() {
+        assert_eq!(
+            expr_ok("(x +/- 1 mm) + (y +/- 2 mm)"),
+            "(+ (± x (1 mm)) (± y (2 mm)))"
+        );
+    }
+
+    #[test]
+    fn expr_spans() {
+        let e = parse_ok("(a) * b", |p| p.expr());
+        assert_eq!(e.span, 0..7);
+        let ExprKind::Binary { lhs, .. } = &e.kind else {
+            panic!("expected a binary expression, got {e:?}");
+        };
+        assert_eq!(lhs.span, 0..3); // the span of `a` covers its brackets
+    }
+
+    #[test]
+    fn expr_second_tolerance_is_e0005() {
+        let errors = parse_errors("x +/- 1 mm +/- 2 mm", |p| p.expr());
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].code, "E0005");
+        assert_eq!(errors[0].span, 11..14);
+    }
+
+    #[test]
+    fn expr_missing_operand_is_e0002() {
+        let errors = parse_errors("a +", |p| p.expr());
+        assert_eq!(errors[0].code, "E0002");
+        assert_eq!(errors[0].message, "expected an expression, found end of file");
+    }
+
+    #[test]
+    fn expr_call_arguments_need_commas() {
+        let errors = parse_errors("f(a b)", |p| p.expr());
+        assert_eq!(errors[0].message, "expected `,` or `)`, found a name");
+        assert_eq!(errors[0].span, 4..5);
+    }
+
+    #[test]
+    fn expr_power_is_not_chained() {
+        // `^` has no associativity: `x^2^3` stops after `x^2`.
+        let source = "x^2^3";
+        let (tokens, _) = lex(source);
+        let mut parser = Parser::new(source, tokens);
+        let e = parser.expr().expect("x^2 parses");
+        assert_eq!(show_expr(&e), "(^ x 2)");
+        assert_eq!(parser.peek(), TokenKind::Caret);
     }
 }
