@@ -1,0 +1,8 @@
+[package]
+name = "diagnostics"
+description = "Diagnostic type, error codes and rendering for FacadeLang"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]

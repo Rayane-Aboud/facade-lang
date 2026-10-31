@@ -1,0 +1,10 @@
+[package]
+name = "syntax"
+description = "Lexer, parser, AST and source spans for FacadeLang"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+
+[dependencies]
+diagnostics.workspace = true

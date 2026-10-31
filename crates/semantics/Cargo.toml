@@ -1,0 +1,10 @@
+[package]
+name = "semantics"
+description = "Name resolution and type checking for FacadeLang"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+diagnostics.workspace = true
+syntax.workspace = true
