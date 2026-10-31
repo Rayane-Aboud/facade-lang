@@ -4,14 +4,26 @@
 //! Each rule returns `Option<T>`: `None` means an error was reported in
 //! `diagnostics`. The caller usually passes it on with `?`.
 
-// The rules are written bottom-up: `parse` (step 5d) will use all of them.
-// Until then they are only called from tests.
-#![cfg_attr(not(test), allow(dead_code))]
-
 use diagnostics::{Diagnostic, Span};
 
-use crate::ast::{BinOp, Expr, ExprKind, Name, Product, ProductKind, Quantity, Type, TypeKind};
+use crate::ast::{
+    BinOp, CmpOp, Comparison, Decl, DeclKind, Expr, ExprKind, Name, Predicate, Product,
+    ProductKind, Program, Quantity, Step, Type, TypeKind, UnitDef,
+};
+use crate::lexer::lex;
 use crate::token::{Token, TokenKind};
+
+/// Parse a whole program. Lexer and parser diagnostics are returned together.
+///
+/// The program contains every declaration that parsed without errors; a
+/// broken declaration is reported and left out.
+pub fn parse(source: &str) -> (Program, Vec<Diagnostic>) {
+    let (tokens, mut diagnostics) = lex(source);
+    let mut parser = Parser::new(source, tokens);
+    let program = parser.program();
+    diagnostics.append(&mut parser.diagnostics);
+    (program, diagnostics)
+}
 
 struct Parser<'a> {
     source: &'a str,
@@ -29,6 +41,248 @@ impl<'a> Parser<'a> {
             pos: 0,
             diagnostics: Vec::new(),
         }
+    }
+
+    // Rules: programs and declarations.
+
+    /// `program = { decl } ;`
+    ///
+    /// After a broken declaration, skip to the next one and continue, so one
+    /// run reports every broken declaration.
+    fn program(&mut self) -> Program {
+        let mut decls = Vec::new();
+        while self.peek() != TokenKind::Eof {
+            match self.decl() {
+                Some(decl) => decls.push(decl),
+                None => self.recover(),
+            }
+        }
+        Program { decls }
+    }
+
+    /// Skip tokens until a declaration keyword or the end of the input.
+    ///
+    /// It does not skip a keyword it is already on: if the error was found at
+    /// the start of the next declaration, that declaration is still parsed.
+    /// The loop in `program` always makes progress: either `decl` consumes a
+    /// keyword, or this method consumes at least one other token.
+    fn recover(&mut self) {
+        while !self.at_decl_start() {
+            self.advance();
+        }
+    }
+
+    fn at_decl_start(&self) -> bool {
+        use TokenKind::*;
+        matches!(
+            self.peek(),
+            Dimension | Unit | Kind | Extern | Param | Let | Component | Plan | Eof
+        )
+    }
+
+    /// `decl = dimension_decl | unit_decl | kind_decl | extern_decl
+    ///        | param_decl | let_decl | component_decl | plan_decl ;`
+    ///
+    /// The first keyword decides which one.
+    fn decl(&mut self) -> Option<Decl> {
+        let start = self.start();
+        let kind = match self.peek() {
+            TokenKind::Dimension => self.dimension_decl()?,
+            TokenKind::Unit => self.unit_decl()?,
+            TokenKind::Kind => self.kind_decl()?,
+            TokenKind::Extern => self.extern_decl()?,
+            TokenKind::Param => self.param_decl()?,
+            TokenKind::Let => self.let_decl()?,
+            TokenKind::Component => self.component_decl()?,
+            TokenKind::Plan => self.plan_decl()?,
+            _ => {
+                self.error_expected("a declaration");
+                return None;
+            }
+        };
+        Some(Decl {
+            kind,
+            span: self.span_from(start),
+        })
+    }
+
+    /// `dimension_decl = "dimension" , IDENT , [ "=" , dim_type ] ;`
+    fn dimension_decl(&mut self) -> Option<DeclKind> {
+        self.advance();
+        let name = self.name()?;
+        let definition = if self.eat(TokenKind::Eq) {
+            Some(self.product()?)
+        } else {
+            None
+        };
+        Some(DeclKind::Dimension { name, definition })
+    }
+
+    /// `unit_decl = "unit" , IDENT , ( ":" , IDENT | "=" , quantity ) ;`
+    fn unit_decl(&mut self) -> Option<DeclKind> {
+        self.advance();
+        let name = self.name()?;
+        let definition = match self.peek() {
+            TokenKind::Colon => {
+                self.advance();
+                UnitDef::Base(self.name()?)
+            }
+            TokenKind::Eq => {
+                self.advance();
+                UnitDef::Scaled(self.quantity()?)
+            }
+            _ => {
+                self.error_expected("`:` or `=`");
+                return None;
+            }
+        };
+        Some(DeclKind::Unit { name, definition })
+    }
+
+    /// `kind_decl = "kind" , IDENT , ":" , dim_type ;`
+    fn kind_decl(&mut self) -> Option<DeclKind> {
+        self.advance();
+        let name = self.name()?;
+        self.expect(TokenKind::Colon)?;
+        let parent = self.product()?;
+        Some(DeclKind::Kind { name, parent })
+    }
+
+    /// `extern_decl = "extern" , IDENT , "(" , [ type , { "," , type } ] , ")" ,
+    ///                "->" , type ;`
+    fn extern_decl(&mut self) -> Option<DeclKind> {
+        self.advance();
+        let name = self.name()?;
+        self.expect(TokenKind::LParen)?;
+        let params = self.list(Self::ty)?;
+        self.expect(TokenKind::Arrow)?;
+        let result = self.ty()?;
+        Some(DeclKind::Extern {
+            name,
+            params,
+            result,
+        })
+    }
+
+    /// `param_decl = "param" , IDENT , ":" , type , [ "=" , expr ] ,
+    ///               [ "where" , predicate ] ;`
+    fn param_decl(&mut self) -> Option<DeclKind> {
+        self.advance();
+        let name = self.name()?;
+        self.expect(TokenKind::Colon)?;
+        let ty = self.ty()?;
+        let default = if self.eat(TokenKind::Eq) {
+            Some(self.expr()?)
+        } else {
+            None
+        };
+        let refinement = if self.eat(TokenKind::Where) {
+            Some(self.predicate()?)
+        } else {
+            None
+        };
+        Some(DeclKind::Param {
+            name,
+            ty,
+            default,
+            refinement,
+        })
+    }
+
+    /// `let_decl = "let" , IDENT , [ ":" , type ] , "=" , expr ;`
+    fn let_decl(&mut self) -> Option<DeclKind> {
+        self.advance();
+        let name = self.name()?;
+        let ty = if self.eat(TokenKind::Colon) {
+            Some(self.ty()?)
+        } else {
+            None
+        };
+        self.expect(TokenKind::Eq)?;
+        let value = self.expr()?;
+        Some(DeclKind::Let { name, ty, value })
+    }
+
+    /// `component_decl = "component" , IDENT , ":" , IDENT ;`
+    fn component_decl(&mut self) -> Option<DeclKind> {
+        self.advance();
+        let name = self.name()?;
+        self.expect(TokenKind::Colon)?;
+        let ty = self.name()?;
+        Some(DeclKind::Component { name, ty })
+    }
+
+    /// `plan_decl = "plan" , IDENT , "{" , { step } , "}" ;`
+    fn plan_decl(&mut self) -> Option<DeclKind> {
+        self.advance();
+        let name = self.name()?;
+        self.expect(TokenKind::LBrace)?;
+        let mut steps = Vec::new();
+        while !self.eat(TokenKind::RBrace) {
+            steps.push(self.step()?);
+        }
+        Some(DeclKind::Plan { name, steps })
+    }
+
+    /// `step = "install" , IDENT , [ "on" , IDENT ] , ";" ;`
+    fn step(&mut self) -> Option<Step> {
+        let start = self.start();
+        if !self.eat(TokenKind::Install) {
+            self.error_expected("`install` or `}`");
+            return None;
+        }
+        let component = self.name()?;
+        let on = if self.eat(TokenKind::On) {
+            Some(self.name()?)
+        } else {
+            None
+        };
+        self.expect(TokenKind::Semi)?;
+        Some(Step {
+            component,
+            on,
+            span: self.span_from(start),
+        })
+    }
+
+    // Rules: predicates.
+
+    /// `predicate = comparison , { "and" , comparison } ;`
+    fn predicate(&mut self) -> Option<Predicate> {
+        let start = self.start();
+        let mut comparisons = vec![self.comparison()?];
+        while self.eat(TokenKind::And) {
+            comparisons.push(self.comparison()?);
+        }
+        Some(Predicate {
+            comparisons,
+            span: self.span_from(start),
+        })
+    }
+
+    /// `comparison = expr , ( "<" | "<=" | ">" | ">=" | "==" ) , expr ;`
+    fn comparison(&mut self) -> Option<Comparison> {
+        let start = self.start();
+        let lhs = self.expr()?;
+        let op = match self.peek() {
+            TokenKind::Lt => CmpOp::Lt,
+            TokenKind::Le => CmpOp::Le,
+            TokenKind::Gt => CmpOp::Gt,
+            TokenKind::Ge => CmpOp::Ge,
+            TokenKind::EqEq => CmpOp::Eq,
+            _ => {
+                self.error_expected("a comparison (`<`, `<=`, `>`, `>=` or `==`)");
+                return None;
+            }
+        };
+        self.advance();
+        let rhs = self.expr()?;
+        Some(Comparison {
+            lhs,
+            op,
+            rhs,
+            span: self.span_from(start),
+        })
     }
 
     // Rules: expressions, from the loosest operator to the tightest.
@@ -134,7 +388,7 @@ impl<'a> Parser<'a> {
             TokenKind::Ident => {
                 let name = self.name()?;
                 if self.eat(TokenKind::LParen) {
-                    let args = self.args()?;
+                    let args = self.list(Self::expr)?;
                     ExprKind::Call { func: name, args }
                 } else {
                     ExprKind::Name(name)
@@ -158,16 +412,18 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// The arguments of a call, after its `(`: `[ expr , { "," , expr } ] , ")"`.
-    fn args(&mut self) -> Option<Vec<Expr>> {
-        let mut args = Vec::new();
+    /// A comma-separated list after its opening `(`, up to and including the
+    /// `)`: `[ item , { "," , item } ] , ")"`. Used for call arguments and for
+    /// the parameter types of an `extern`.
+    fn list<T>(&mut self, mut item: impl FnMut(&mut Self) -> Option<T>) -> Option<Vec<T>> {
+        let mut items = Vec::new();
         if self.eat(TokenKind::RParen) {
-            return Some(args);
+            return Some(items);
         }
         loop {
-            args.push(self.expr()?);
+            items.push(item(self)?);
             if self.eat(TokenKind::RParen) {
-                return Some(args);
+                return Some(items);
             }
             if !self.eat(TokenKind::Comma) {
                 self.error_expected("`,` or `)`");
@@ -412,7 +668,6 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lexer::lex;
 
     /// Parse `source` with `rule`. Check that there are no diagnostics and that
     /// the whole input was used, then return the result.
@@ -497,6 +752,78 @@ mod tests {
         }
     }
 
+    /// `where t > 0 m and t < 2 m` is `(where (> t (0 m)) (< t (2 m)))`.
+    fn show_predicate(p: &Predicate) -> String {
+        let mut parts = vec!["where".to_string()];
+        parts.extend(p.comparisons.iter().map(|c| {
+            let op = match c.op {
+                CmpOp::Lt => "<",
+                CmpOp::Le => "<=",
+                CmpOp::Gt => ">",
+                CmpOp::Ge => ">=",
+                CmpOp::Eq => "==",
+            };
+            format!("({op} {} {})", show_expr(&c.lhs), show_expr(&c.rhs))
+        }));
+        format!("({})", parts.join(" "))
+    }
+
+    /// An optional part: shown with `show`, or `_` when it is missing.
+    fn show_opt<T>(x: &Option<T>, show: impl Fn(&T) -> String) -> String {
+        x.as_ref().map_or("_".to_string(), show)
+    }
+
+    /// `let vol = area(mid) * t` is `(let vol _ (* (call area mid) t))`.
+    fn show_decl(d: &Decl) -> String {
+        match &d.kind {
+            DeclKind::Dimension { name, definition } => match definition {
+                Some(p) => format!("(dimension {} {})", name.text, show(p)),
+                None => format!("(dimension {})", name.text),
+            },
+            DeclKind::Unit { name, definition } => match definition {
+                UnitDef::Base(dim) => format!("(unit {} : {})", name.text, dim.text),
+                UnitDef::Scaled(q) => format!("(unit {} = {})", name.text, show_quantity(q)),
+            },
+            DeclKind::Kind { name, parent } => format!("(kind {} {})", name.text, show(parent)),
+            DeclKind::Extern {
+                name,
+                params,
+                result,
+            } => {
+                let params: Vec<String> = params.iter().map(show_type).collect();
+                let result = show_type(result);
+                format!("(extern {} ({}) {result})", name.text, params.join(" "))
+            }
+            DeclKind::Param {
+                name,
+                ty,
+                default,
+                refinement,
+            } => format!(
+                "(param {} {} {} {})",
+                name.text,
+                show_type(ty),
+                show_opt(default, show_expr),
+                show_opt(refinement, show_predicate)
+            ),
+            DeclKind::Let { name, ty, value } => format!(
+                "(let {} {} {})",
+                name.text,
+                show_opt(ty, show_type),
+                show_expr(value)
+            ),
+            DeclKind::Component { name, ty } => format!("(component {} {})", name.text, ty.text),
+            DeclKind::Plan { name, steps } => {
+                let mut parts = vec![format!("plan {}", name.text)];
+                parts.extend(steps.iter().map(|s| match &s.on {
+                    Some(on) => format!("(install {} on {})", s.component.text, on.text),
+                    None => format!("(install {})", s.component.text),
+                }));
+                format!("({})", parts.join(" "))
+            }
+        }
+    }
+
     fn product_ok(source: &str) -> String {
         show(&parse_ok(source, |p| p.product()))
     }
@@ -511,6 +838,10 @@ mod tests {
 
     fn expr_ok(source: &str) -> String {
         show_expr(&parse_ok(source, |p| p.expr()))
+    }
+
+    fn decl_ok(source: &str) -> String {
+        show_decl(&parse_ok(source, |p| p.decl()))
     }
 
     // Products
@@ -767,7 +1098,10 @@ mod tests {
     fn expr_missing_operand_is_e0002() {
         let errors = parse_errors("a +", |p| p.expr());
         assert_eq!(errors[0].code, "E0002");
-        assert_eq!(errors[0].message, "expected an expression, found end of file");
+        assert_eq!(
+            errors[0].message,
+            "expected an expression, found end of file"
+        );
     }
 
     #[test]
@@ -786,5 +1120,183 @@ mod tests {
         let e = parser.expr().expect("x^2 parses");
         assert_eq!(show_expr(&e), "(^ x 2)");
         assert_eq!(parser.peek(), TokenKind::Caret);
+    }
+
+    // Declarations
+
+    #[test]
+    fn decl_dimension() {
+        assert_eq!(decl_ok("dimension Length"), "(dimension Length)");
+        assert_eq!(
+            decl_ok("dimension Area = Length^2"),
+            "(dimension Area Length^2)"
+        );
+    }
+
+    #[test]
+    fn decl_unit_base_and_scaled() {
+        assert_eq!(decl_ok("unit m : Length"), "(unit m : Length)");
+        assert_eq!(decl_ok("unit mm = 0.001 m"), "(unit mm = (0.001 m))");
+        assert_eq!(
+            decl_ok("unit N = 1 [kg*m/s^2]"),
+            "(unit N = (1 (/ (* kg m) s^2)))"
+        );
+    }
+
+    #[test]
+    fn decl_unit_needs_colon_or_equals() {
+        let errors = parse_errors("unit mm 0.001 m", |p| p.decl());
+        assert_eq!(errors[0].message, "expected `:` or `=`, found a number");
+    }
+
+    #[test]
+    fn decl_kind() {
+        assert_eq!(
+            decl_ok("kind Thickness : Length"),
+            "(kind Thickness Length)"
+        );
+    }
+
+    #[test]
+    fn decl_extern() {
+        assert_eq!(
+            decl_ok("extern thicken(Surface, Thickness) -> Solid"),
+            "(extern thicken (Surface Thickness) Solid)"
+        );
+        assert_eq!(decl_ok("extern now() -> Time"), "(extern now () Time)");
+    }
+
+    #[test]
+    fn decl_param() {
+        assert_eq!(decl_ok("param base : Curve"), "(param base Curve _ _)");
+        assert_eq!(
+            decl_ok("param thickness : Thickness = 0.9 m where thickness > 0 m"),
+            "(param thickness Thickness (0.9 m) (where (> thickness (0 m))))"
+        );
+        assert_eq!(
+            decl_ok("param frame : Tol<Length, 2.5 mm> = 10 mm"),
+            "(param frame (Tol Length (2.5 mm)) (10 mm) _)"
+        );
+    }
+
+    #[test]
+    fn decl_param_negative_default_is_a_negation() {
+        // `-1.0 m` is `-(1.0 m)`: there are no negative literals in the grammar.
+        assert_eq!(
+            decl_ok("param inset : Inset = -1.0 m"),
+            "(param inset Inset (neg (1 m)) _)"
+        );
+    }
+
+    #[test]
+    fn decl_predicate_with_and() {
+        assert_eq!(
+            decl_ok("param t : Thickness where t > 0 m and t <= 2 m"),
+            "(param t Thickness _ (where (> t (0 m)) (<= t (2 m))))"
+        );
+    }
+
+    #[test]
+    fn decl_let() {
+        assert_eq!(
+            decl_ok("let vol = area(mid) * thickness"),
+            "(let vol _ (* (call area mid) thickness))"
+        );
+        assert_eq!(
+            decl_ok("let vol : Volume = area(mid) * thickness"),
+            "(let vol Volume (* (call area mid) thickness))"
+        );
+    }
+
+    #[test]
+    fn decl_component_and_plan() {
+        assert_eq!(decl_ok("component f1 : Frame"), "(component f1 Frame)");
+        assert_eq!(
+            decl_ok("plan assembly { install f1; install g1 on f1; }"),
+            "(plan assembly (install f1) (install g1 on f1))"
+        );
+    }
+
+    #[test]
+    fn decl_unclosed_plan_is_e0002() {
+        let errors = parse_errors("plan p { install a;", |p| p.decl());
+        assert_eq!(
+            errors[0].message,
+            "expected `install` or `}`, found end of file"
+        );
+    }
+
+    #[test]
+    fn decl_span_covers_the_whole_declaration() {
+        assert_eq!(parse_ok("let a = 1 m", |p| p.decl()).span, 0..11);
+    }
+
+    // Programs and error recovery
+
+    #[test]
+    fn program_empty() {
+        let (program, diagnostics) = parse("-- only a comment\n");
+        assert_eq!(program.decls, vec![]);
+        assert_eq!(diagnostics, vec![]);
+    }
+
+    #[test]
+    fn program_fig5_example_parses() {
+        let (program, diagnostics) = parse(include_str!("../../../examples/ok/fig5_panel.fcd"));
+        assert_eq!(diagnostics, vec![]);
+        assert_eq!(program.decls.len(), 9);
+        assert_eq!(
+            show_decl(&program.decls[3]),
+            "(param thickness Thickness (0.9 m) (where (> thickness (0 m))))"
+        );
+        assert_eq!(
+            show_decl(&program.decls[7]),
+            "(let panel _ (call thicken mid thickness))"
+        );
+    }
+
+    #[test]
+    fn program_prelude_parses() {
+        let (program, diagnostics) = parse(include_str!("../../../prelude/std.fcd"));
+        assert_eq!(diagnostics, vec![]);
+        assert!(!program.decls.is_empty());
+    }
+
+    #[test]
+    fn program_reports_every_broken_declaration() {
+        let source = "param a = 1\nlet b = 2\nlet c =\nparam d : Length";
+        let (program, diagnostics) = parse(source);
+        let messages: Vec<&str> = diagnostics.iter().map(|d| d.message.as_str()).collect();
+        assert_eq!(
+            messages,
+            vec![
+                "expected `:`, found `=`",
+                "expected an expression, found `param`",
+            ]
+        );
+        // `b` and `d` survive; `d` comes right after the error in `c`.
+        let names: Vec<String> = program.decls.iter().map(show_decl).collect();
+        assert_eq!(
+            names,
+            vec!["(let b _ 2)", "(param d Length _ _)"]
+        );
+    }
+
+    #[test]
+    fn program_skips_junk_between_declarations() {
+        let (program, diagnostics) = parse("3 + 4\nlet a = 1");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message,
+            "expected a declaration, found a number"
+        );
+        assert_eq!(program.decls.len(), 1);
+    }
+
+    #[test]
+    fn program_returns_lexer_and_parser_errors_together() {
+        let (_, diagnostics) = parse("let a = 1 @\nlet b =");
+        let codes: Vec<&str> = diagnostics.iter().map(|d| d.code).collect();
+        assert_eq!(codes, vec!["E0001", "E0002"]);
     }
 }
