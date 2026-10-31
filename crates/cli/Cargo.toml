@@ -1,0 +1,13 @@
+[package]
+name = "cli"
+description = "facadec: command-line front end for FacadeLang"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "facadec"
+path = "src/main.rs"
+
+[dependencies]
+semantics.workspace = true

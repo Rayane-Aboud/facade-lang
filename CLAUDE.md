@@ -86,7 +86,7 @@ facadelang/
     syntax/       lexer, parser, AST, source spans
     diagnostics/  Diagnostic type, error codes, rendering (ariadne)
     semantics/    name resolution, type checker, the three features
-    cli/          `facadec check file.fl`, `facadec ast --json file.fl` (M6)
+    cli/          `facadec check file.fcd`, `facadec ast --json file.fcd` (M6)
     wasm/         (Milestone 5) browser build of the checker
   haskell-ref/    (Milestone 6) Haskell reference checker for Feature 1 (Cabal project)
   tests/diff/     (Milestone 6) differential tests: Rust vs Haskell results
