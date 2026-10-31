@@ -50,8 +50,14 @@ fn check_rejects_program_with_syntax_error() {
     assert_eq!(out.status.code(), Some(1));
     assert!(out.stdout.is_empty());
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("error[E0002]: expected `:`, found `=`"),
-        "stderr was: {stderr}"
-    );
+    for expected in [
+        "[E0002] Error: expected `:`, found `=`",
+        "examples/err/param_missing_type.fcd:4:14",
+        "param offset = 0.0 m",
+    ] {
+        assert!(
+            stderr.contains(expected),
+            "missing {expected:?} in: {stderr}"
+        );
+    }
 }

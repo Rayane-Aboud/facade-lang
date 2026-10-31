@@ -10,4 +10,6 @@ name = "facadec"
 path = "src/main.rs"
 
 [dependencies]
+diagnostics.workspace = true
 semantics.workspace = true
+

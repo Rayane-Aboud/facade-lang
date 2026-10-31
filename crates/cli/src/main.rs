@@ -1,5 +1,6 @@
 use std::env;
 use std::fs;
+use std::io::{self, IsTerminal};
 use std::process::ExitCode;
 
 const USAGE: &str = "usage: facadec check <file.fcd>";
@@ -27,8 +28,10 @@ fn main() -> ExitCode {
         println!("ok: {path}");
         ExitCode::SUCCESS
     } else {
+        // Colours only for a real terminal, not for pipes, files or tests.
+        let color = io::stderr().is_terminal();
         for d in &diagnostics {
-            eprintln!("{path}: {d}");
+            eprint!("{}", diagnostics::render(d, path, &source, color));
         }
         ExitCode::from(1)
     }
