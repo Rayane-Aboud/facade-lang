@@ -1,7 +1,5 @@
 -- The facade panel of paper Fig. 5, with named and typed inputs.
-
-kind Thickness : Length
-kind Inset     : Length
+-- The kinds Thickness and Inset come from prelude/std.fcd.
 
 param base      : Curve
 param inset     : Inset     = -1.0 m
