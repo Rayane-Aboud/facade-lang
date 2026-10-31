@@ -10,6 +10,8 @@
     "vscode": "^1.90.0"
   },
   "categories": ["Programming Languages"],
+  "main": "./out/extension.js",
+  "activationEvents": ["onLanguage:facadelang"],
   "contributes": {
     "languages": [
       {
@@ -25,6 +27,33 @@
         "scopeName": "source.facadelang",
         "path": "./syntaxes/facadelang.tmLanguage.json"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "FacadeLang",
+      "properties": {
+        "facadelang.preludePath": {
+          "type": "string",
+          "default": "prelude/std.fcd",
+          "description": "Prelude file to read unit declarations from (absolute, or relative to the workspace folder)."
+        },
+        "facadelang.suggestPlusMinusSymbol": {
+          "type": "boolean",
+          "default": false,
+          "description": "After typing +/-, suggest replacing it with the ± symbol."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "npm run compile && node --test \"out/**/*.test.js\"",
+    "package": "npm run compile && vsce package --allow-missing-repository --skip-license"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "~1.90.0",
+    "@vscode/vsce": "^3.0.0",
+    "typescript": "^5.4.0"
   }
 }

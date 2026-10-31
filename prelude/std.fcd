@@ -1,0 +1,55 @@
+-- FacadeLang standard prelude: loaded before every program.
+-- Dimensions, units, quantity kinds and the built-in geometry functions.
+
+-- SI base dimensions
+dimension Length
+dimension Mass
+dimension Time
+dimension Current
+dimension Temperature
+dimension Amount
+dimension Luminosity
+
+-- derived dimensions
+dimension Area     = Length^2
+dimension Volume   = Length^3
+dimension Velocity = Length / Time
+dimension Force    = Mass * Length / Time^2
+dimension Pressure = Force / Area
+dimension Energy   = Force * Length
+dimension Power    = Energy / Time
+
+-- base units (one per base dimension)
+unit m   : Length
+unit kg  : Mass
+unit s   : Time
+unit A   : Current
+unit K   : Temperature
+unit mol : Amount
+unit cd  : Luminosity
+
+-- derived units (a scale factor to SI)
+unit mm  = 0.001 m
+unit cm  = 0.01 m
+unit km  = 1000 m
+unit g   = 0.001 kg
+unit min = 60 s
+unit h   = 3600 s
+unit N   = 1 [kg*m/s^2]
+unit kN  = 1000 N
+unit Pa  = 1 [N/m^2]
+unit kPa = 1000 Pa
+unit MPa = 1e6 Pa
+unit J   = 1 [N*m]
+unit W   = 1 [J/s]
+
+-- quantity kinds for facade panels (paper Fig. 5)
+kind Thickness : Length
+kind Inset     : Length
+
+-- geometry built-ins: opaque, only their types are declared
+extern offset_curve(Curve, Inset) -> Curve
+extern patch(Curve) -> Surface
+extern offset_surface(Surface, Length) -> Surface
+extern thicken(Surface, Thickness) -> Solid
+extern area(Surface) -> Area

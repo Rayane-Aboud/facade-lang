@@ -50,6 +50,8 @@ The core (`syntax`, `semantics`, `diagnostics`) does no I/O. Everything that
 touches the outside world is a thin *adapter* around the same core:
 
 - `cli`: files and the terminal (now);
+- `editors/vscode`: highlighting and unit completion, reading the `unit`
+  declarations in `prelude/std.fcd` (now);
 - `wasm`: the browser playground (M5);
 - the JSON AST export: a process boundary for the Haskell reference
   checker (M6) and other tools, with no FFI.
