@@ -1,0 +1,16 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+# Settings shared by every crate. Each crate opts in with `x.workspace = true`.
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+# Internal crates, declared once here so members can write `diagnostics.workspace = true`.
+[workspace.dependencies]
+diagnostics = { path = "crates/diagnostics" }
+syntax = { path = "crates/syntax" }
+semantics = { path = "crates/semantics" }
+
