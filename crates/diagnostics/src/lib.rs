@@ -19,3 +19,21 @@ impl fmt::Display for Diagnostic {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_shows_code_message_and_span() {
+        let d = Diagnostic {
+            code: "E0102",
+            message: "kind mismatch".to_string(),
+            span: 10..15,
+        };
+        assert_eq!(
+            d.to_string(),
+            "error[E0102]: kind mismatch (at bytes 10..15)"
+        );
+    }
+}

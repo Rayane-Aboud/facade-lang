@@ -4,10 +4,9 @@ use std::process::ExitCode;
 
 const USAGE: &str = "usage: facadec check <file.fcd>";
 
-
-fn main()-> ExitCode {
+fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
-    let path = match args.as_slice(){
+    let path = match args.as_slice() {
         [cmd, path] if cmd == "check" => path,
         _ => {
             eprintln!("{USAGE}");
@@ -33,5 +32,4 @@ fn main()-> ExitCode {
         }
         ExitCode::from(1)
     }
-
 }
