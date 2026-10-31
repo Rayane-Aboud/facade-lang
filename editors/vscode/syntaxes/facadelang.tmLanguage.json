@@ -1,0 +1,105 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "FacadeLang",
+  "scopeName": "source.facadelang",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#compound-unit" },
+    { "include": "#declaration" },
+    { "include": "#keyword" },
+    { "include": "#quantity" },
+    { "include": "#type" },
+    { "include": "#call" },
+    { "include": "#operator" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comment": {
+      "match": "--.*$",
+      "name": "comment.line.double-dash.facadelang"
+    },
+    "compound-unit": {
+      "begin": "\\[",
+      "end": "\\]",
+      "name": "meta.unit.compound.facadelang",
+      "beginCaptures": { "0": { "name": "punctuation.definition.unit.begin.facadelang" } },
+      "endCaptures": { "0": { "name": "punctuation.definition.unit.end.facadelang" } },
+      "patterns": [
+        { "match": "[A-Za-z_][A-Za-z0-9_]*", "name": "keyword.other.unit.facadelang" },
+        { "match": "-?\\d+", "name": "constant.numeric.facadelang" },
+        { "match": "[*/^]", "name": "keyword.operator.facadelang" }
+      ]
+    },
+    "declaration": {
+      "patterns": [
+        {
+          "match": "\\b(kind|dimension)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.facadelang" },
+            "2": { "name": "entity.name.type.facadelang" }
+          }
+        },
+        {
+          "match": "\\b(unit)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.facadelang" },
+            "2": { "name": "keyword.other.unit.facadelang" }
+          }
+        },
+        {
+          "match": "\\b(param|let|component)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.facadelang" },
+            "2": { "name": "variable.other.definition.facadelang" }
+          }
+        },
+        {
+          "match": "\\b(extern|plan)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.facadelang" },
+            "2": { "name": "entity.name.function.facadelang" }
+          }
+        }
+      ]
+    },
+    "keyword": {
+      "patterns": [
+        {
+          "match": "\\b(dimension|unit|kind|extern|param|let|component|plan)\\b",
+          "name": "storage.type.facadelang"
+        },
+        {
+          "match": "\\b(where|and|install|on)\\b",
+          "name": "keyword.control.facadelang"
+        }
+      ]
+    },
+    "quantity": {
+      "match": "\\b(\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)(?:\\s*(?!(?:dimension|unit|kind|extern|param|let|where|and|component|plan|install|on|Tol)\\b)([A-Za-z_][A-Za-z0-9_]*)(?:\\s*(\\^)\\s*(-?\\d+))?)?",
+      "captures": {
+        "1": { "name": "constant.numeric.facadelang" },
+        "2": { "name": "keyword.other.unit.facadelang" },
+        "3": { "name": "keyword.operator.facadelang" },
+        "4": { "name": "constant.numeric.facadelang" }
+      }
+    },
+    "type": {
+      "match": "\\b[A-Z][A-Za-z0-9_]*\\b",
+      "name": "entity.name.type.facadelang"
+    },
+    "call": {
+      "match": "\\b([a-z_][A-Za-z0-9_]*)\\s*(?=\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.facadelang" }
+      }
+    },
+    "operator": {
+      "match": "±|\\+/-|->|<=|>=|==|[-+*/^<>=]",
+      "name": "keyword.operator.facadelang"
+    },
+    "punctuation": {
+      "match": "[,;:]",
+      "name": "punctuation.separator.facadelang"
+    }
+  }
+}

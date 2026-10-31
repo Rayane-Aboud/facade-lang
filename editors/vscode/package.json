@@ -1,0 +1,30 @@
+{
+  "name": "facadelang",
+  "displayName": "FacadeLang",
+  "description": "Syntax highlighting and unit completion for FacadeLang (.fcd)",
+  "version": "0.1.0",
+  "publisher": "local",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "facadelang",
+        "aliases": ["FacadeLang", "facadelang"],
+        "extensions": [".fcd"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "facadelang",
+        "scopeName": "source.facadelang",
+        "path": "./syntaxes/facadelang.tmLanguage.json"
+      }
+    ]
+  }
+}
