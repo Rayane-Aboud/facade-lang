@@ -9,74 +9,90 @@
   <link rel="stylesheet" href="style.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/mode/simple.min.js"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
   <script type="module" src="app.js"></script>
 </head>
 <body>
 
-<header class="wrap">
-  <p class="eyebrow">Research prototype · Design Computation</p>
+<header class="wrap top">
   <h1>FacadeLang</h1>
   <p class="lead">
-    A small typed language for façade design. Units, dimensions and
-    <em>kinds of quantity</em> are part of the type, so mistakes that a visual
-    program runs silently become compile-time errors.
+    A typed language for façade design. Units, dimensions and <em>kinds of quantity</em>
+    are part of the type, so the slider swap of paper Fig. 5 becomes a compile-time error.
   </p>
   <p class="cite">
     Builds on Aish, Fisher, Orchard, Torry.
     <a href="https://doi.org/10.1145/3689492.3689812"><em>Programming Languages for the Future of Design Computation</em></a>.
-    Onward! 2024, §6.1 and Fig. 5.
+    Onward! 2024.
   </p>
 </header>
 
-<main class="wrap">
-
-  <section>
-    <h2>The bug</h2>
-    <p>
-      In paper Fig. 5, a façade panel is built from three unnamed number
-      sliders: inset = −1, offset = 0, thickness = 0.9. Connect the inset
-      slider where the thickness should go, and Dynamo builds a wrong panel
-      without a word. In FacadeLang every input has a name and a type:
-    </p>
-<pre class="snippet">param inset     : Inset     = -1.0 m
-param thickness : Thickness =  0.9 m
-let panel = thicken(mid, inset)    -- error[E0102]: expected Thickness, found Inset</pre>
-    <p>
-      Both values are lengths, so a checker with units alone would accept the
-      swap. But an inset and a thickness are different <em>kinds</em> of
-      length, just as torque and energy are different kinds of N·m. The
-      checker knows this, and rejects the program.
-    </p>
-  </section>
-
-  <section id="playground">
-    <h2>Try it</h2>
-    <p class="hint">
-      The checker is the Rust implementation compiled to WebAssembly: it runs
-      in your browser as you type. Pick an example, or edit freely.
-    </p>
+<main>
+  <section id="playground" class="wrap">
     <div class="toolbar">
       <label for="example">Example</label>
       <select id="example"></select>
       <span id="status" class="status">loading the checker…</span>
     </div>
-    <div class="grid">
-      <div class="editor-pane"><textarea id="source"></textarea></div>
-      <div class="results">
-        <h3>Diagnostics</h3>
-        <pre id="diagnostics" class="diagnostics"></pre>
-        <h3>Inferred types (the environment Γ)</h3>
+
+    <div class="app">
+      <div class="pane editor-pane"><textarea id="source"></textarea></div>
+      <div class="pane view-pane">
+        <div id="view" class="view"></div>
+        <div id="view-banner" class="view-banner"></div>
+        <p class="view-help">drag to rotate · scroll to zoom · right-drag to pan</p>
+      </div>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-tab="diagnostics" role="tab">Diagnostics</button>
+      <button class="tab" data-tab="types" role="tab">Types (Γ)</button>
+    </div>
+    <div class="tab-panels">
+      <pre id="diagnostics" class="tab-panel diagnostics"></pre>
+      <div id="types" class="tab-panel" hidden>
         <table id="bindings">
           <thead><tr><th>name</th><th>type</th><th>value (SI)</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
     </div>
-    <h3>The panel</h3>
-    <div id="drawing" class="drawing"></div>
+
+    <p class="hint">
+      The checker is the Rust implementation compiled to WebAssembly; it runs in your
+      browser as you type. The geometry built-ins are opaque in the language: the 3D view
+      runs simple stand-ins for them (a Curve input is a 4 m × 3 m bay). Like an untyped
+      visual tool, the view runs even when the checker rejects the program, and then shows
+      the result in red.
+    </p>
   </section>
 
-  <section id="docs">
+  <section class="wrap">
+    <h2>The bug</h2>
+    <p>
+      In paper Fig. 5, a façade panel is built from three unnamed number sliders:
+      inset = −1, offset = 0, thickness = 0.9. Connect the inset slider where the
+      thickness should go, and Dynamo builds a wrong panel without a word. In FacadeLang
+      every input has a name and a type:
+    </p>
+<pre class="snippet">param inset     : Inset     = -1.0 m
+param thickness : Thickness =  0.9 m
+let panel = thicken(mid, inset)    -- error[E0102]: expected Thickness, found Inset</pre>
+    <p>
+      Both values are lengths, so a checker with units alone would accept the swap. But an
+      inset and a thickness are different <em>kinds</em> of length, just as torque and
+      energy are different kinds of N·m. The checker knows this, and rejects the program.
+    </p>
+  </section>
+
+  <section id="docs" class="wrap">
     <h2>The language in one screen</h2>
 <pre class="snippet">-- domain concepts are declared, not hard-coded (the prelude declares SI and façades)
 dimension Length
@@ -120,7 +136,7 @@ let vol   = area(mid) * thickness             -- inferred: Length^3</pre>
     </details>
   </section>
 
-  <section id="progress">
+  <section class="wrap">
     <h2>Status</h2>
     <p><b>Done:</b> lexer and parser with error recovery, readable diagnostics, the Feature 1 checker
        (dimensions, units, kinds, subtyping, inference), unit, example and property-based tests
@@ -132,7 +148,6 @@ let vol   = area(mid) * thickness             -- inferred: Length^3</pre>
       <li>A hierarchy of warnings, and a Haskell reference checker for differential testing.</li>
     </ul>
   </section>
-
 </main>
 
 <footer class="wrap">
