@@ -116,7 +116,7 @@ associative, has an identity element, and gives every element an inverse.
 All four hold because they hold for integer addition, exponent by exponent.
 In fact D is the same group as ℤᴮ, vectors of integers added component by
 component. This is the structure Kennedy uses for dimension types, and it is
-what the implementation will store: one integer per base dimension. The laws
+what the implementation stores: a map from base dimension to its non-zero exponent. The laws
 are tested with property-based tests (`proptest`).
 
 **Derived dimension declarations** give a name to a dimension. They do not
@@ -497,7 +497,7 @@ the ones before it (decision K5, declare before use):
 
 `dimension`, `unit`, `kind` and `extern` declarations build the signature Σ
 (section 2), in the same declare-before-use order. Invalid unit declarations
-(a base unit for a derived dimension, or a second base unit) are E0109.
+(a base unit for a derived dimension, a second base unit, or a scale that is not positive) are E0109.
 `component` and `plan` are Feature 3 and are ignored here.
 
 ### 3.6 Error codes
