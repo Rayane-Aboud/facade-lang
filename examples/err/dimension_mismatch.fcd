@@ -1,0 +1,7 @@
+-- expect: E0101
+-- A length plus a time has no physical meaning.
+
+param height : Length = 3.2 m
+param delay  : Time   = 2 s
+
+let wrong = height + delay
