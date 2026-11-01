@@ -191,8 +191,14 @@ impl Checker {
                 let r = self.quantity_expr(rhs);
                 let ((lt, lv), (rt, rv)) = (l?, r?);
                 match op {
-                    BinOp::Add => Some((self.add(&lt, &rt, e.span.clone())?, both(lv, rv, |a, b| a + b))),
-                    BinOp::Sub => Some((self.add(&lt, &rt, e.span.clone())?, both(lv, rv, |a, b| a - b))),
+                    BinOp::Add => Some((
+                        self.add(&lt, &rt, e.span.clone())?,
+                        both(lv, rv, |a, b| a + b),
+                    )),
+                    BinOp::Sub => Some((
+                        self.add(&lt, &rt, e.span.clone())?,
+                        both(lv, rv, |a, b| a - b),
+                    )),
                     BinOp::Mul => Some((self.mul(&lt, &rt), both(lv, rv, |a, b| a * b))),
                     BinOp::Div => Some((self.div(&lt, &rt), both(lv, rv, |a, b| a / b))),
                 }
@@ -276,11 +282,12 @@ impl Checker {
             self.report("E0106", message, span);
         } else {
             for ((arg, typed), param) in args.iter().zip(typed).zip(&f.params) {
-                if let Some((tau, _)) = typed {
-                    if !self.sig.is_subtype(&tau, param) {
-                        self.mismatch(&tau, param, arg.span.clone());
-                    }
+                if let Some((tau, _)) = typed
+                    && !self.sig.is_subtype(&tau, param)
+                {
+                    self.mismatch(&tau, param, arg.span.clone());
                 }
+
             }
         }
         // The result type is known even if an argument is wrong, so one
@@ -386,13 +393,21 @@ mod tests {
     fn type_of(source: &str, name: &str) -> String {
         let analysis = analyse(source);
         assert_eq!(analysis.diagnostics, vec![], "should be accepted");
-        let b = analysis.bindings.iter().find(|b| b.name == name).expect("declared");
+        let b = analysis
+            .bindings
+            .iter()
+            .find(|b| b.name == name)
+            .expect("declared");
         b.ty.to_string()
     }
 
     fn value_of(source: &str, name: &str) -> f64 {
         let analysis = analyse(source);
-        let b = analysis.bindings.iter().find(|b| b.name == name).expect("declared");
+        let b = analysis
+            .bindings
+            .iter()
+            .find(|b| b.name == name)
+            .expect("declared");
         b.value.expect("value is known")
     }
 
@@ -497,7 +512,10 @@ mod tests {
 
     #[test]
     fn call_with_wrong_geometry_is_e0108() {
-        assert_eq!(codes(&with("param c : Curve\nlet p = thicken(c, t)")), vec!["E0108"]);
+        assert_eq!(
+            codes(&with("param c : Curve\nlet p = thicken(c, t)")),
+            vec!["E0108"]
+        );
     }
 
     #[test]
@@ -534,7 +552,13 @@ mod tests {
 
     #[test]
     fn refinement_needs_equal_dimensions() {
-        assert_eq!(codes("param t : Thickness = 0.9 m where t > 0 m"), Vec::<&str>::new());
-        assert_eq!(codes("param t : Thickness = 0.9 m where t > 0 s"), vec!["E0101"]);
+        assert_eq!(
+            codes("param t : Thickness = 0.9 m where t > 0 m"),
+            Vec::<&str>::new()
+        );
+        assert_eq!(
+            codes("param t : Thickness = 0.9 m where t > 0 s"),
+            vec!["E0101"]
+        );
     }
 }

@@ -15,7 +15,6 @@ struct JsDiagnostic {
     rendered: String,
 }
 
-
 #[derive(Serialize)]
 struct JsBinding {
     name: String,
@@ -84,7 +83,6 @@ fn position(source: &str, byte: usize) -> (usize, usize) {
     (line, column)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -99,7 +97,10 @@ mod tests {
 
     fn binding<'a>(result: &'a Value, name: &str) -> &'a Value {
         let bindings = result["bindings"].as_array().expect("bindings is a list");
-        bindings.iter().find(|b| b["name"] == name).expect("declared")
+        bindings
+            .iter()
+            .find(|b| b["name"] == name)
+            .expect("declared")
     }
 
     #[test]
@@ -119,7 +120,12 @@ mod tests {
         assert_eq!(d["line"], 13);
         assert_eq!(d["column"], 26);
         assert_eq!(d["end_column"], 31);
-        assert!(d["rendered"].as_str().unwrap().contains("thicken(mid, inset)"));
+        assert!(
+            d["rendered"]
+                .as_str()
+                .unwrap()
+                .contains("thicken(mid, inset)")
+        );
     }
 
     #[test]
@@ -143,4 +149,3 @@ mod tests {
         assert!(prelude().contains("kind Thickness"));
     }
 }
-
