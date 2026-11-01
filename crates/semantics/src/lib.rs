@@ -1,6 +1,12 @@
 use diagnostics::Diagnostic;
 
 pub mod dimension;
+pub mod signature;
+pub mod types;
+
+/// The standard prelude (`prelude/std.fcd`), built into the program so it
+/// also works where there is no file system (the browser, M5).
+pub const PRELUDE: &str = include_str!("../../../prelude/std.fcd");
 
 /// Check a whole FacadeLang program. An empty result means it is accepted.
 ///
