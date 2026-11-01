@@ -10,6 +10,7 @@ import init, { check, prelude } from "./pkg/facadelang.js";
 // The example programs, copied from examples/ by build.sh. The first one is
 // shown when the page opens.
 const EXAMPLES = [
+  { file: "ok/tower.fcd", title: "Twisting tower: angle, ratio and count as kinds ✓" },
   { file: "ok/building.fcd", title: "Office building: 4 façades, floors, core ✓" },
   { file: "ok/facade.fcd", title: "Curtain-wall façade, 8 × 6 bays ✓" },
   { file: "err/fig5_swap.fcd", title: "Fig. 5 swap → E0102 kind mismatch" },
@@ -33,6 +34,8 @@ const MATERIALS = {
   fin: { color: 0xb08a5a, opacity: 1 },
   concrete: { color: 0xb9b4aa, opacity: 1 },
   core: { color: 0x9a9184, opacity: 1 },
+  plate: { color: 0xe9e5dd, opacity: 1 },
+  rib: { color: 0xf6f3ee, opacity: 1 },
   bad: { color: 0xd9483b, opacity: 0.55 },
 };
 const CURVE_COLOR = 0x8a8f98;
@@ -274,8 +277,19 @@ const BUILTINS = {
     const e = extent(shell);
     return solid({ cx: 0, cy: (e.minY + e.maxY) / 2, cz: 0, w: size, h: e.maxY - e.minY, d: size, material: "core" });
   },
-};
 
+  // Declared by examples/ok/tower.fcd. A swept form is a surface that
+  // remembers how it was made; its layers are drawn by buildSwept below.
+  oval: (a, b) => (isNumber(a) && isNumber(b) ? { kind: "curve", oval: { a, b } } : undefined),
+  sweep: (c, n, h, twist, taper, sway) =>
+    c?.oval && [n, h, twist, taper, sway].every(isNumber)
+      ? { kind: "surface", form: { ...c.oval, n: Math.max(1, Math.min(120, Math.round(n))), h, twist, taper, sway } }
+      : undefined,
+  skin: (s) => (s?.form ? solid({ type: "skin", form: s.form, material: "glass" }) : undefined),
+  plates: (s, t) => (s?.form && isNumber(t) ? solid({ type: "plates", form: s.form, thickness: t, material: "plate" }) : undefined),
+  ribs: (s, n, d) => (s?.form && isNumber(n) && isNumber(d) ? solid({ type: "ribs", form: s.form, count: n, depth: d, material: "rib" }) : undefined),
+  spine: (s, w) => (s?.form && isNumber(w) ? solid({ type: "spine", form: s.form, width: w, material: "core" }) : undefined),
+};
 
 
 function evaluate(result) {
@@ -314,6 +328,99 @@ function evaluate(result) {
     if (!used.has(step.name) && typeof value === "object") shapes.push({ name: step.name, ...value });
   }
   return { shapes, notes };
+}
+
+// Swept forms (tower example). A floor outline is a superellipse (a rounded
+// rectangle) that, going up, turns by `twist`, scales by `taper` with a slight
+// belly, and drifts sideways by `sway`. t is the height fraction, 0 to 1.
+
+const SEGMENTS = 96; // points around one floor outline
+
+function formPoint(f, u, t, offset = 0) {
+  const ease = t * t * (3 - 2 * t); // smooth start and end of the twist
+  const scale = (1 + (f.taper - 1) * t) * (1 + 0.1 * Math.sin(Math.PI * t));
+  const angle = f.twist * ease;
+  const e = 2 / 2.6;
+  const cu = Math.cos(u);
+  const su = Math.sin(u);
+  const px = (f.a * scale + offset) * Math.sign(cu) * Math.abs(cu) ** e;
+  const pz = (f.b * scale + offset) * Math.sign(su) * Math.abs(su) ** e;
+  const sx = f.sway * Math.sin(Math.PI * t);
+  return new THREE.Vector3(
+    sx + px * Math.cos(angle) - pz * Math.sin(angle),
+    t * f.n * f.h,
+    px * Math.sin(angle) + pz * Math.cos(angle),
+  );
+}
+
+function formCenter(f, t) {
+  return new THREE.Vector3(f.sway * Math.sin(Math.PI * t), t * f.n * f.h, 0);
+}
+
+// The geometries of one swept part, in world coordinates.
+function buildSwept(p) {
+  const f = p.form;
+  if (p.type === "skin") {
+    const rows = f.n * 2;
+    const row = SEGMENTS + 1;
+    const positions = [];
+    for (let r = 0; r <= rows; r++) {
+      for (let i = 0; i <= SEGMENTS; i++) {
+        const v = formPoint(f, (i / SEGMENTS) * 2 * Math.PI, r / rows);
+        positions.push(v.x, v.y, v.z);
+      }
+    }
+    const index = [];
+    for (let r = 0; r < rows; r++) {
+      for (let i = 0; i < SEGMENTS; i++) {
+        const a = r * row + i;
+        index.push(a, a + row, a + 1, a + 1, a + row, a + row + 1);
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setIndex(index);
+    geometry.computeVertexNormals();
+    return [geometry];
+  }
+  if (p.type === "plates") {
+    const thickness = Math.max(0.02, Math.abs(p.thickness));
+    const geometries = [];
+    for (let k = 0; k <= f.n; k++) {
+      const t = k / f.n;
+      const shape = new THREE.Shape();
+      for (let i = 0; i < SEGMENTS; i++) {
+        // The bands stick out 45 cm beyond the glass.
+        const v = formPoint(f, (i / SEGMENTS) * 2 * Math.PI, t, 0.45);
+        // ExtrudeGeometry works in the xy plane; rotateX below lays it flat.
+        if (i === 0) shape.moveTo(v.x, -v.z);
+        else shape.lineTo(v.x, -v.z);
+      }
+      const geometry = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false });
+      geometry.rotateX(-Math.PI / 2);
+      geometry.translate(0, t * f.n * f.h - thickness, 0);
+      geometries.push(geometry);
+    }
+    return geometries;
+  }
+  if (p.type === "ribs") {
+    const count = Math.max(0, Math.min(200, Math.round(p.count)));
+    const radius = Math.max(0.03, Math.abs(p.depth) / 2);
+    const geometries = [];
+    for (let i = 0; i < count; i++) {
+      const u = (i / count) * 2 * Math.PI;
+      const points = [];
+      for (let k = 0; k <= f.n * 2; k++) points.push(formPoint(f, u, k / (f.n * 2), radius + 0.15));
+      geometries.push(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), f.n * 3, radius, 6, false));
+    }
+    return geometries;
+  }
+  if (p.type === "spine") {
+    const points = [];
+    for (let k = 0; k <= 16; k++) points.push(formCenter(f, k / 16));
+    return [new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 64, Math.max(0.5, p.width / 2), 24, true)];
+  }
+  return [];
 }
 
 function render(result) {
@@ -426,6 +533,7 @@ function drawShape(shape, accepted, materials) {
   const group = new THREE.Group();
 
   if (shape.kind === "curve" || shape.kind === "surface") {
+    if (!isNumber(shape.w)) return group; // ovals and swept forms are drawn by their layers
     if (shape.w <= 0 || shape.h <= 0) {
       group.add(label(`${shape.name}: collapsed (size ≤ 0)`, shape.cx, shape.cy, shape.z, "bad"));
       return group;
@@ -455,6 +563,16 @@ function drawShape(shape, accepted, materials) {
   const withEdges = shape.parts.length <= 20;
   let inverted = false;
   for (const p of shape.parts) {
+    if (p.type) {
+      // A swept part (tower example): built from its form, not a box.
+      const style = accepted ? p.material : "bad";
+      for (const geometry of buildSwept(p)) {
+        group.add(new THREE.Mesh(geometry, material(materials, style)));
+        geometry.computeBoundingBox();
+        bounds.union(geometry.boundingBox);
+      }
+      continue;
+    }
     if (p.w <= 0 || p.h <= 0 || Math.abs(p.d) < 1e-9) continue;
     inverted ||= p.d < 0;
     const style = !accepted || p.d < 0 ? "bad" : (p.material in MATERIALS ? p.material : "panel");
@@ -478,7 +596,7 @@ function drawShape(shape, accepted, materials) {
   const size = bounds.getSize(new THREE.Vector3());
   const center = bounds.getCenter(new THREE.Vector3());
   let text;
-  if (shape.parts.length === 1) {
+  if (shape.parts.length === 1 && !shape.parts[0].type) {
     const p = shape.parts[0];
     const warning = p.d < 0 ? " (negative: inverted solid)" : "";
     text = `${shape.name}: ${fmt(p.w)} × ${fmt(p.h)} m, thickness ${fmt(p.d)} m${warning}`;
@@ -494,7 +612,10 @@ function material(cache, style) {
   if (!cache.has(style)) {
     const { color, opacity } = MATERIALS[style];
     // Transparent parts do not write depth, so glass never hides the glass behind it.
-    cache.set(style, new THREE.MeshLambertMaterial({ color, transparent: opacity < 1, opacity, depthWrite: opacity >= 1 }));
+    cache.set(
+      style,
+      new THREE.MeshLambertMaterial({ color, transparent: opacity < 1, opacity, depthWrite: opacity >= 1, side: THREE.DoubleSide }),
+    );
   }
   return cache.get(style);
 }
