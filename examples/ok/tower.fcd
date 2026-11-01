@@ -1,0 +1,59 @@
+-- A twisting tower, in the spirit of parametric architecture: one rounded
+-- plan, swept up through the floors while it turns, tapers and sways.
+-- An angle, a ratio and a count are all pure numbers (dimension 1), but
+-- each has its own kind: the checker never lets one stand in for another.
+--
+-- Try: twist = 270 deg, taper = 0.4, sway = 12 m, floors = 60, fins = 96.
+--      Then swap `twist` and `taper` in the call to `sweep` (E0102).
+
+dimension Number = Length / Length        -- pure numbers: the dimension 1
+unit rad = 1 [m/m]
+unit deg = 0.0174532925 rad
+
+kind Count         : Number
+kind Angle         : Number
+kind Ratio         : Number
+kind Radius        : Length
+kind FloorHeight   : Length
+kind Sway          : Length
+kind SlabThickness : Length
+kind RibDepth      : Length
+kind CoreWidth     : Length
+
+-- geometry built-ins (opaque: only their types are known)
+extern oval(Radius, Radius) -> Curve
+extern sweep(Curve, Count, FloorHeight, Angle, Ratio, Sway) -> Surface
+extern skin(Surface) -> Solid
+extern plates(Surface, SlabThickness) -> Solid
+extern ribs(Surface, Count, RibDepth) -> Solid
+extern spine(Surface, CoreWidth) -> Solid
+extern union(Solid, Solid) -> Solid
+
+-- design inputs
+param a      : Radius        = 18 m
+param b      : Radius        = 11 m
+param floors : Count         = 40
+param storey : FloorHeight   = 4 m
+param twist  : Angle         = 150 deg
+param taper  : Ratio         = 0.62   where taper > 0.2 and taper < 1.5
+param sway   : Sway          = 6 m
+param slab   : SlabThickness = 450 mm
+param fins   : Count         = 48
+param rib    : RibDepth      = 350 mm
+param core   : CoreWidth     = 9 m
+
+-- the form, then its layers
+let footprint = oval(a, b)
+let form      = sweep(footprint, floors, storey, twist, taper, sway)
+let glass     = skin(form)
+let levels    = plates(form, slab)
+let lines     = ribs(form, fins, rib)
+let heart     = spine(form, core)
+let envelope  = union(glass, lines)
+let interior  = union(levels, heart)
+let tower     = union(envelope, interior)
+
+-- inferred quantities (see the Types tab)
+let height    = storey * floors             -- Length
+let base_area = 3.14159 * a * b             -- Length^2 (the plan is about an ellipse)
+let top_area  = base_area * taper * taper   -- Length^2
