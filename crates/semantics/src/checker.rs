@@ -287,7 +287,6 @@ impl Checker {
                 {
                     self.mismatch(&tau, param, arg.span.clone());
                 }
-
             }
         }
         // The result type is known even if an argument is wrong, so one
