@@ -180,8 +180,9 @@ impl Signature {
                         error(diags, "E0101", message, tolerance.span.clone());
                     }
                     None => {
-                        let message =
-                            format!("`{inner_ty}` is not a quantity, so it cannot have a tolerance");
+                        let message = format!(
+                            "`{inner_ty}` is not a quantity, so it cannot have a tolerance"
+                        );
                         error(diags, "E0105", message, inner.span.clone());
                     }
                 }
@@ -263,7 +264,9 @@ impl Signature {
     pub fn quantity(&self, q: &Quantity, diags: &mut Vec<Diagnostic>) -> Option<(Dimension, f64)> {
         match &q.unit {
             None => Some((Dimension::one(), q.value)),
-            Some(p) => self.unit(p, diags).map(|u| (u.dimension, q.value * u.scale)),
+            Some(p) => self
+                .unit(p, diags)
+                .map(|u| (u.dimension, q.value * u.scale)),
         }
     }
 
@@ -375,8 +378,14 @@ mod tests {
     #[test]
     fn derived_dimensions_are_computed() {
         let (sig, _) = declare_all(crate::PRELUDE);
-        assert_eq!(sig.dimensions["Force"].to_string(), "Length * Mass * Time^-2");
-        assert_eq!(sig.dimensions["Pressure"].to_string(), "Length^-1 * Mass * Time^-2");
+        assert_eq!(
+            sig.dimensions["Force"].to_string(),
+            "Length * Mass * Time^-2"
+        );
+        assert_eq!(
+            sig.dimensions["Pressure"].to_string(),
+            "Length^-1 * Mass * Time^-2"
+        );
     }
 
     #[test]
@@ -410,7 +419,8 @@ mod tests {
 
     #[test]
     fn base_unit_of_derived_dimension_is_e0109() {
-        let (_, codes) = declare_all("dimension Length\ndimension Area = Length^2\nunit sqm : Area");
+        let (_, codes) =
+            declare_all("dimension Length\ndimension Area = Length^2\nunit sqm : Area");
         assert_eq!(codes, vec!["E0109"]);
     }
 
@@ -449,8 +459,14 @@ mod tests {
     fn join_is_nearest_common_ancestor() {
         let (sig, _) = declare_all(KINDS);
         assert_eq!(sig.join(&kind("Thickness"), &kind("Inset")), length());
-        assert_eq!(sig.join(&kind("GlassThickness"), &kind("Thickness")), kind("Thickness"));
-        assert_eq!(sig.join(&kind("Thickness"), &kind("GlassThickness")), kind("Thickness"));
+        assert_eq!(
+            sig.join(&kind("GlassThickness"), &kind("Thickness")),
+            kind("Thickness")
+        );
+        assert_eq!(
+            sig.join(&kind("Thickness"), &kind("GlassThickness")),
+            kind("Thickness")
+        );
     }
 
     // Types written in the source (section 3.2)
