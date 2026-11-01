@@ -156,6 +156,7 @@ dependencies = [
  "semantics",
  "serde",
  "serde_json",
+ "syntax",
  "wasm-bindgen",
 ]
 
