@@ -1,0 +1,13 @@
+-- Users can add their own units and kinds (paper §6.4: "user-defined
+-- extension of domain concepts"). A GlassThickness is a Thickness,
+-- so it can be passed to `thicken`.
+
+unit inch = 25.4 mm
+kind GlassThickness : Thickness
+
+param outline : Curve
+param pane    : GlassThickness = 0.25 inch  where pane > 0 mm
+
+let surface = patch(outline)
+let glass   = thicken(surface, pane)
+let weight  = area(surface) * pane * 2500 [kg/m^3]

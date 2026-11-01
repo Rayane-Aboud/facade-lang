@@ -1,0 +1,4 @@
+-- expect: E0104
+-- `inch` is not in the prelude. Declare it first: `unit inch = 25.4 mm`.
+
+param frame : Length = 4 inch

@@ -1,0 +1,14 @@
+-- expect: E0102
+-- The bug of paper Fig. 5: `inset` is passed where the thickness should go.
+-- In Dynamo this runs silently and builds a wrong panel.
+
+param base      : Curve
+param inset     : Inset     = -1.0 m
+param offset    : Length    =  0.0 m
+param thickness : Thickness =  0.9 m  where thickness > 0 m
+
+let curve = offset_curve(base, inset)
+let surf  = patch(curve)
+let mid   = offset_surface(surf, offset)
+let panel = thicken(mid, inset)
+let vol   = area(mid) * thickness

@@ -1,0 +1,7 @@
+-- expect: E0102
+-- A value with a kind cannot be relabelled as another kind.
+-- Kinds are given once, where a name is declared.
+
+param inset : Inset = -1.0 m
+
+let thickness : Thickness = inset
