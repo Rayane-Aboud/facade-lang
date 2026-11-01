@@ -1,5 +1,10 @@
 use diagnostics::Diagnostic;
 
+pub mod dimension;
+
+/// Check a whole FacadeLang program. An empty result means it is accepted.
+///
+/// For now this only parses (syntax errors); the type checker comes in M2.
 pub fn check(source: &str) -> Vec<Diagnostic> {
     let (_program, diagnostics) = syntax::parser::parse(source);
     diagnostics
