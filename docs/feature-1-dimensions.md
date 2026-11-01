@@ -699,5 +699,7 @@ E0102.
 - **Floating point.** Normalising to SI multiplies by scales such as 0.001,
   so values are subject to `f64` rounding. Exact comparisons are a Feature 2
   question.
-- **One warning level.** W0101 is the only warning; the paper's full
-  "hierarchy of warnings" is future work.
+- **Warnings are not implemented yet.** Diagnostics have no warning level,
+  so W0101 is not reported: incomparable kinds are combined silently (the
+  result type is still their join). The paper's full "hierarchy of
+  warnings" is future work.
