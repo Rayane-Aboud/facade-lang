@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FacadeLang Playground</title>
+  <meta name="description" content="A typed language for design computation: the Fig. 5 slider swap becomes a compile-time error.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/mode/simple.min.js"></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+
+<header class="wrap">
+  <p class="eyebrow">Research prototype · Design Computation</p>
+  <h1>FacadeLang</h1>
+  <p class="lead">
+    A small typed language for façade design. Units, dimensions and
+    <em>kinds of quantity</em> are part of the type, so mistakes that a visual
+    program runs silently become compile-time errors.
+  </p>
+  <p class="cite">
+    Builds on Aish, Fisher, Orchard, Torry.
+    <a href="https://doi.org/10.1145/3689492.3689812"><em>Programming Languages for the Future of Design Computation</em></a>.
+    Onward! 2024, §6.1 and Fig. 5.
+  </p>
+</header>
+
+<main class="wrap">
+
+  <section>
+    <h2>The bug</h2>
+    <p>
+      In paper Fig. 5, a façade panel is built from three unnamed number
+      sliders: inset = −1, offset = 0, thickness = 0.9. Connect the inset
+      slider where the thickness should go, and Dynamo builds a wrong panel
+      without a word. In FacadeLang every input has a name and a type:
+    </p>
+<pre class="snippet">param inset     : Inset     = -1.0 m
+param thickness : Thickness =  0.9 m
+let panel = thicken(mid, inset)    -- error[E0102]: expected Thickness, found Inset</pre>
+    <p>
+      Both values are lengths, so a checker with units alone would accept the
+      swap. But an inset and a thickness are different <em>kinds</em> of
+      length, just as torque and energy are different kinds of N·m. The
+      checker knows this, and rejects the program.
+    </p>
+  </section>
+
+  <section id="playground">
+    <h2>Try it</h2>
+    <p class="hint">
+      The checker is the Rust implementation compiled to WebAssembly: it runs
+      in your browser as you type. Pick an example, or edit freely.
+    </p>
+    <div class="toolbar">
+      <label for="example">Example</label>
+      <select id="example"></select>
+      <span id="status" class="status">loading the checker…</span>
+    </div>
+    <div class="grid">
+      <div class="editor-pane"><textarea id="source"></textarea></div>
+      <div class="results">
+        <h3>Diagnostics</h3>
+        <pre id="diagnostics" class="diagnostics"></pre>
+        <h3>Inferred types (the environment Γ)</h3>
+        <table id="bindings">
+          <thead><tr><th>name</th><th>type</th><th>value (SI)</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <h3>The panel</h3>
+    <div id="drawing" class="drawing"></div>
+  </section>
+
+  <section id="docs">
+    <h2>The language in one screen</h2>
+<pre class="snippet">-- domain concepts are declared, not hard-coded (the prelude declares SI and façades)
+dimension Length
+dimension Area = Length^2
+unit m  : Length
+unit mm = 0.001 m
+kind Thickness : Length                       -- a Length with a specific meaning
+extern thicken(Surface, Thickness) -> Solid   -- geometry is opaque: only its type is known
+
+-- a design: named, typed inputs and a dataflow of pure functions
+param thickness : Thickness = 0.9 m  where thickness > 0 m
+let panel = thicken(mid, thickness)
+let vol   = area(mid) * thickness             -- inferred: Length^3</pre>
+
+    <ul class="rules">
+      <li><b>Dimensions.</b> <code>+</code>, <code>−</code> and comparisons need equal dimensions (E0101). <code>*</code>, <code>/</code> and <code>^</code> combine them, as an abelian group of exponent vectors: L² · L = L³, inferred without annotation.</li>
+      <li><b>Units</b> are normalised to SI and then erased: <code>2.5 mm</code> is the number 0.0025 of dimension Length.</li>
+      <li><b>Kinds</b> form a subtyping hierarchy: <code>Thickness &lt;: Length</code>. A plain <code>0.9 m</code> receives its kind once, where a name is declared. After that a kind cannot be relabelled, and an <code>Inset</code> never reaches a <code>Thickness</code> parameter (E0102).</li>
+      <li><b>Guarantee.</b> Well-typed programs are dimensionally homogeneous (Kennedy's dimension types) and kind-safe. The typing rules and proof sketches are in the <a href="https://github.com/Rayane-Aboud/facade-lang/blob/main/docs/feature-1-dimensions.md">formal document for Feature 1</a>.</li>
+    </ul>
+
+    <h3>Error codes</h3>
+    <table class="codes">
+      <tbody>
+        <tr><td>E0001–E0005</td><td>syntax errors (see <a href="https://github.com/Rayane-Aboud/facade-lang/blob/main/docs/grammar.md">the grammar</a>)</td></tr>
+        <tr><td>E0101</td><td>dimension mismatch</td></tr>
+        <tr><td>E0102</td><td>kind mismatch (the Fig. 5 swap)</td></tr>
+        <tr><td>E0103</td><td>unknown name</td></tr>
+        <tr><td>E0104</td><td>unknown unit</td></tr>
+        <tr><td>E0105</td><td>geometry used in arithmetic</td></tr>
+        <tr><td>E0106</td><td>wrong number of arguments</td></tr>
+        <tr><td>E0107</td><td>duplicate declaration</td></tr>
+        <tr><td>E0108</td><td>type mismatch (other)</td></tr>
+        <tr><td>E0109</td><td>invalid unit declaration</td></tr>
+      </tbody>
+    </table>
+
+    <details>
+      <summary>The standard prelude (built in, loaded before every program)</summary>
+      <pre id="prelude" class="snippet"></pre>
+    </details>
+  </section>
+
+  <section id="progress">
+    <h2>Status</h2>
+    <p><b>Done:</b> lexer and parser with error recovery, readable diagnostics, the Feature 1 checker
+       (dimensions, units, kinds, subtyping, inference), unit, example and property-based tests
+       (dimension group laws), a command-line checker, and this WebAssembly playground.</p>
+    <p><b>Next:</b></p>
+    <ul>
+      <li><b>Tolerances</b> as intervals (Moore arithmetic); <code>where</code> clauses checked as <i>proved</i>, <i>error</i> or <i>cannot prove</i>; compatibility of tolerance stack-ups.</li>
+      <li><b>Construction order:</b> components as linear resources with typestate (Fabricated → Installed), rejecting invalid assembly sequences.</li>
+      <li>A hierarchy of warnings, and a Haskell reference checker for differential testing.</li>
+    </ul>
+  </section>
+
+</main>
+
+<footer class="wrap">
+  Rayane Aboud · <a href="https://rayaneaboud.dev">rayaneaboud.dev</a> ·
+  <a href="https://github.com/Rayane-Aboud/facade-lang">source on GitHub</a>
+</footer>
+
+</body>
+</html>
