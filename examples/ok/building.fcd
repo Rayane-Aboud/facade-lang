@@ -1,0 +1,67 @@
+-- An empty office building: four curtain-wall façades around the plan,
+-- floor plates, a roof and a lift core, all from one typed bay.
+--
+-- Try: change `front_bays`, `side_bays` or `floors`.
+--      Then swap `storey` and `floor` in the call to `storeys` (E0102):
+--      a slab thickness is not a floor height, though both are lengths.
+
+dimension Count = Length / Length      -- a pure number: the dimension 1
+
+kind BayWidth      : Length
+kind FloorHeight   : Length
+kind FrameWidth    : Length
+kind FrameDepth    : Length
+kind FinDepth      : Length
+kind SlabThickness : Length
+kind CoreWidth     : Length
+kind PaneThickness : Thickness
+
+-- geometry built-ins (opaque: only their types are known)
+extern rect(BayWidth, FloorHeight) -> Curve
+extern inner(Curve, FrameWidth) -> Curve
+extern frame(Curve, FrameWidth, FrameDepth) -> Solid
+extern glaze(Surface, PaneThickness) -> Solid
+extern fin(Curve, FinDepth) -> Solid
+extern union(Solid, Solid) -> Solid
+extern grid(Solid, Count, Count, BayWidth, FloorHeight) -> Solid
+extern enclose(Solid, Solid) -> Solid
+extern storeys(Solid, Count, FloorHeight, SlabThickness) -> Solid
+extern core(Solid, CoreWidth) -> Solid
+
+-- design inputs
+param front_bays : Count         = 10
+param side_bays  : Count         = 6
+param floors     : Count         = 8
+param bay        : BayWidth      = 1.5 m
+param storey     : FloorHeight   = 3.6 m
+param mullion    : FrameWidth    = 60 mm
+param depth      : FrameDepth    = 150 mm
+param blade      : FinDepth      = 350 mm
+param floor      : SlabThickness = 300 mm
+param lift_core  : CoreWidth     = 5 m
+param pane       : PaneThickness = 24 mm   where pane > 6 mm and pane < 60 mm
+
+-- one bay of curtain wall
+let outline  = rect(bay, storey)
+let opening  = inner(outline, mullion)
+let vision   = patch(opening)
+let glass    = glaze(vision, pane)
+let mullions = frame(outline, mullion, depth)
+let shade    = fin(outline, blade)
+let framed   = union(mullions, glass)
+let cell     = union(framed, shade)
+
+-- façades wrapped around the plan, then floor plates, roof and core
+let front    = grid(cell, front_bays, floors, bay, storey)
+let side     = grid(cell, side_bays, floors, bay, storey)
+let shell    = enclose(front, side)
+let plates   = storeys(shell, floors, storey, floor)
+let lifts    = core(shell, lift_core)
+let inside   = union(plates, lifts)
+let building = union(shell, inside)
+
+-- inferred quantities (see the Types tab)
+let height     = storey * floors                        -- FloorHeight: scaling keeps the kind
+let plan_area  = bay * front_bays * (bay * side_bays)   -- Length^2
+let gross_area = plan_area * floors                     -- Length^2
+let volume     = gross_area * storey                    -- Length^3
