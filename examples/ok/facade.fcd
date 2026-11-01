@@ -1,0 +1,54 @@
+-- A curtain-wall façade: 8 bays × 6 floors, built from one typed bay.
+-- The program declares its own domain concepts (paper §6.4): every length
+-- has a kind, so mixing two of them up is a compile-time error.
+--
+-- Try: change `bays`, `floors`, `blade` or `mullion` and watch the view.
+--      Then swap `bay` and `storey` in the call to `grid` (E0102).
+
+dimension Count = Length / Length      -- a pure number: the dimension 1
+
+kind BayWidth      : Length
+kind FloorHeight   : Length
+kind FrameWidth    : Length
+kind FrameDepth    : Length
+kind FinDepth      : Length
+kind SlabThickness : Length
+kind PaneThickness : Thickness
+
+-- geometry built-ins for this example (opaque: only their types are known)
+extern rect(BayWidth, FloorHeight) -> Curve
+extern inner(Curve, FrameWidth) -> Curve
+extern frame(Curve, FrameWidth, FrameDepth) -> Solid
+extern glaze(Surface, PaneThickness) -> Solid
+extern slab(Curve, SlabThickness) -> Solid
+extern fin(Curve, FinDepth) -> Solid
+extern union(Solid, Solid) -> Solid
+extern grid(Solid, Count, Count, BayWidth, FloorHeight) -> Solid
+
+-- design inputs
+param bays    : Count         = 8
+param floors  : Count         = 6
+param bay     : BayWidth      = 1.5 m
+param storey  : FloorHeight   = 3.6 m
+param mullion : FrameWidth    = 60 mm
+param depth   : FrameDepth    = 150 mm
+param blade   : FinDepth      = 400 mm
+param floor   : SlabThickness = 300 mm
+param pane    : PaneThickness = 24 mm   where pane > 6 mm and pane < 60 mm
+
+-- one bay: aluminium frame, glass in the opening, slab edge, sun fin
+let outline  = rect(bay, storey)
+let opening  = inner(outline, mullion)
+let vision   = patch(opening)
+let glass    = glaze(vision, pane)
+let mullions = frame(outline, mullion, depth)
+let edge     = slab(outline, floor)
+let shade    = fin(outline, blade)
+let framed   = union(mullions, glass)
+let floored  = union(framed, edge)
+let cell     = union(floored, shade)
+
+-- the whole façade, and two inferred quantities (see the Types tab)
+let facade     = grid(cell, bays, floors, bay, storey)
+let glass_area = area(vision) * bays * floors        -- Length^2
+let glass_mass = glass_area * pane * 2500 [kg/m^3]   -- Mass
